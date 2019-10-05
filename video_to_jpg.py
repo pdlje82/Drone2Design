@@ -1,20 +1,9 @@
 import cv2
 from exif import Image
+from PIL import Image as PILImage
 import math
-import pyproj
-import numpy as np
-
-
-def write_imgs():
-    vidcap = cv2.VideoCapture('./data/input/DJI_0007.MP4')
-    success, image = vidcap.read()
-    print(success, image)
-    count = 0
-    while success:
-        cv2.imwrite("./data/output/frame%d.jpg" % count, image)     # save frame as JPEG file
-        success, image = vidcap.read()
-        print('Read a new frame: ', success)
-        count += 1
+import srt_parser
+import piexif
 
 
 def rad2dms(rad_angle):
@@ -25,6 +14,14 @@ def rad2dms(rad_angle):
     degrees, minutes = divmod(minutes, 60)
     degrees = degrees if is_positive else -degrees
     return degrees, minutes, seconds
+
+def rad2dm(rad_angle):
+    deg_angle = math.degrees(rad_angle)
+    is_positive = deg_angle >= 0
+    deg_angle = abs(deg_angle)
+    degrees, minutes = divmod(deg_angle * 60, 60)
+    degrees = degrees if is_positive else -degrees
+    return degrees, minutes
 
 
 # def transform_crs(lon, lat, crs='4326'):
@@ -44,8 +41,9 @@ def open_img(img_path):
     exif_img = Image(img)
     return exif_img
 
-def save_img(save_img_path):
-    mod_img = open(save_img_path, 'wb')
+
+def save_img(save_path, exif_img):
+    mod_img = open(save_path, 'wb')
     mod_img.write(exif_img.get_file())
 
 
@@ -59,43 +57,83 @@ def read_exif_data(exif_img):
             print(getattr(exif_img, e))
         print('\n')
 
+
 def write_exif_gps_data(exif_img, lat, lon):
+    if not exif_img.has_exif:
+        print('ERROR: Image has no EXIF tags!!')
     if lon[0] < 0:
-        lon = lon[0] * -1., lon[1], lon[2]
+        lon = lon[0] * -1., lon[1]  # , lon[2]
         exif_img.gps_longitude_ref = 'W'
     else:
         exif_img.gps_longitude_ref = 'E'
     if lat[0] < 0:
-        lat = lat[0] * -1., lat[1], lat[2]
+        lat = lat[0] * -1., lat[1]  # , lat[2]
         exif_img.gps_latitude_ref = 'S'
     else:
         exif_img.gps_latitude_ref = 'N'
     exif_img.gps_longitude = lon
     exif_img.gps_latitude = lat
+    print('lat: {} {}, \nlon: {} {}'.format(exif_img.gps_latitude_ref,
+                                            exif_img.gps_latitude,
+                                            exif_img.gps_longitude_ref,
+                                            exif_img.gps_longitude))
+    return exif_img
+
+
+def set_exif_bytes(img_path):
+    gps_ifd = {piexif.GPSIFD.GPSVersionID: (2, 0, 0, 0),
+               piexif.GPSIFD.GPSLatitudeRef: 'N',
+               piexif.GPSIFD.GPSLongitudeRef: 'W',
+               piexif.GPSIFD.GPSLatitude: (1, 0),
+               piexif.GPSIFD.GPSLongitude: (1, 0),
+               }
+    exif_dict = {"GPS": gps_ifd}
+    exif_bytes = piexif.dump(exif_dict)
+    im = PILImage.open(img_path)
+    im.save(img_path, exif=exif_bytes)
+
+
+
+def write_imgs(vid_path, save_path, gps_srt_path):
+    count = 1
+    vidcap = cv2.VideoCapture(vid_path)
+    # Create srt dictionary with gps data for each frame
+    srt_dict = srt_parser.frame_to_coordinates_dict(gps_srt_path)
+    # Read first frame from video
+    success, image = vidcap.read()
+    if success:
+        print('success reading 1st frame')
+    while success:
+        img_path = save_path + 'frame{}.jpg'.format(count)
+        cv2.imwrite(img_path, image)     # save frame as JPEG file
+        set_exif_bytes(img_path)
+        exif_img = open_img(img_path)  # open the saved image to write exif data
+        # Read gps data from srt_dict and convert to DMS
+        print('Read gps data from srt_dict and convert to DMS...')
+        latitude = float(srt_dict[str(count)]['lat'])
+        longitude = float(srt_dict[str(count)]['lon'])
+        latitude = rad2dm(latitude)
+        longitude = rad2dm(longitude)
+        # Write gps data to image
+        exif_img_mod = write_exif_gps_data(exif_img, latitude, longitude)
+        # Save image to disk
+        save_img(img_path, exif_img_mod)
+        count += 1
+        success, image = vidcap.read()
+        print('\nRead new frame, number {}: '.format(count))
+        if count >= 5:
+            break
 
 # -----------------------------------------------------------------------------------------------------------
 
-img_path = './data/output/gps_test_img.jpg'
-save_img_path = './data/input/gps_test_img_modified.jpg'
-exif_img = open_img(img_path)
-read_exif_data(exif_img)
+
+# Set paths for video and video-srt with gps data
+video_path = './data/input/DJI_0007.MP4'  # path to DJI input video
+# img_path = './data/input/gps_test_img.jpg'
+save_img_path = './data/output/'
+srt_path = './data/input/DJI_0007.SRT'
 
 
-longitude = -0.041806
-latitude = 0.645039
-
-# pos_lon, pos_lat = transform_crs(longitude, latitude)
-
-pos_lon1 = rad2dms(longitude)
-pos_lat1 = rad2dms(latitude)
-
-print('\nlongitude = {}, \nlatitude = {}'.format(pos_lon1, pos_lat1))
-
-write_exif_gps_data(exif_img, pos_lat1, pos_lon1)
-
-read_exif_data(exif_img)
-
-save_img(save_img_path)
-
+write_imgs(video_path, save_img_path, srt_path)
 
 
