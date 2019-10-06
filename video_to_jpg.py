@@ -74,7 +74,7 @@ def write_imgs(vid_path, save_path, gps_srt_path, frequ):
             longitude = math.degrees(longitude)  # convert from rad to deg
             # Write gps data to image
             set_exif_bytes(img_path, latitude, longitude)
-            success, image = vidcap.read()
+        success, image = vidcap.read()
         count += 1
         print('\nRead new frame, number {}: '.format(count))
         # if count >= 202:
@@ -87,6 +87,7 @@ def read_exif(path):
         for key in exif_dict[ifd_name]:
             try:
                 print(key, exif_dict[ifd_name][key][:10])
+                print()
             except:
                 print(key, exif_dict[ifd_name][key])
 
@@ -101,8 +102,16 @@ save_img_path = './data/output/'
 srt_path = './data/input/DJI_0007.SRT'
 
 
-write_imgs(video_path, save_img_path, srt_path, frequ=10)
+write_imgs(video_path, save_img_path, srt_path, frequ=15)
 
-# read_exif('./data/output/frame1.jpg')
+# read_exif('/media/jan/Blade HDD/!Weiterbildung/D2D/Terreno/data/03_geotagged_test/frame1.jpg')
 
-
+# srt_dict = srt_parser.frame_to_coordinates_dict(srt_path)
+#
+# count = '6528'
+# latitude = float(srt_dict[str(count)]['lat'])
+# longitude = float(srt_dict[str(count)]['lon'])
+# print(latitude, longitude)
+# latitude = math.degrees(latitude)  # convert from rad to deg
+# longitude = math.degrees(longitude)  # convert from rad to deg
+# print(latitude, longitude)
